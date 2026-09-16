@@ -151,6 +151,9 @@ install: sign-daemon build-steno
 	install -d $(PREFIX)
 	install -m 755 $(DAEMON_RELEASE)/$(DAEMON_BIN) $(PREFIX)/$(DAEMON_BIN)
 	install -m 755 $(STENO_DIR)/$(STENO_BIN) $(PREFIX)/$(STENO_BIN)
+	@if [ -d "$(DAEMON_RELEASE)/FluidAudio_FluidAudio.bundle" ]; then \
+		ditto "$(DAEMON_RELEASE)/FluidAudio_FluidAudio.bundle" "$(PREFIX)/FluidAudio_FluidAudio.bundle"; \
+	fi
 	@# Remove old binaries from previous three-binary layout
 	@rm -f $(PREFIX)/steno-tui $(PREFIX)/steno-mcp 2>/dev/null || true
 	@echo ""

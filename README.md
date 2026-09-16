@@ -14,7 +14,20 @@ Steno uses Apple's SpeechAnalyzer API (macOS 26) for real-time transcription tha
 
 ## Install
 
-### Download (recommended)
+### This fork
+
+This fork defaults to TUI-owned daemon lifetime. Build it from source:
+
+```bash
+git clone https://github.com/changhoon-sung/steno.git
+cd steno
+git checkout fix/tui-owned-daemon
+make install
+```
+
+Install location: `~/.local/bin`. Upstream release downloads below do not include this change.
+
+### Upstream download
 
 Download the latest release from [GitHub Releases](https://github.com/jwulff/steno/releases/latest):
 
@@ -45,20 +58,23 @@ steno            # Launch TUI — auto-starts the daemon
 steno --mcp      # Run as MCP stdio server (for Claude Desktop, etc.)
 ```
 
-That's it. Running `steno` automatically starts the daemon in the background if it isn't already running. The daemon survives after you quit the TUI — it keeps recording and persisting transcripts to SQLite.
+Running `steno` starts a daemon owned by that TUI. Quitting with `q`, closing the terminal, or killing the TUI also stops its daemon and audio capture. Shutdown normally drains pending transcripts; a five-second deadline forces exit if draining gets stuck. The owner is monitored before audio initialization, so exiting during startup stops it too.
+
+`steno --mcp` only reads saved transcripts. It does not start a daemon or record audio and remains useful with the TUI closed. If several TUIs share one daemon, closing its original owner stops that daemon; another open TUI reconnects and starts a replacement owned by itself.
 
 ### Controls
 
 | Key | Action |
 |-----|--------|
-| `Space` | Start/stop recording |
+| `Space` | Start a new session |
+| `p` / `P` | Pause for 30 minutes / indefinitely; press again to resume |
 | `i` | Cycle input devices |
 | `a` | Toggle system audio capture |
 | `Tab` | Switch panel focus (topics/transcript) |
 | `j`/`k` | Navigate topics |
 | `Enter` | Expand/collapse topic |
 | `Up`/`Down` | Scroll transcript |
-| `q` | Quit |
+| `q` | Quit and stop the daemon owned by this TUI |
 
 ### MCP Server
 
@@ -81,7 +97,9 @@ Available tools: `get_overview`, `list_sessions`, `get_session`, `get_transcript
 
 ### Daemon Management
 
-The daemon runs as a background process. You can also manage it independently:
+For TUI-only recording, launch `steno` and do not install a background service. Stop any previously installed Homebrew/launchd service and standalone daemon before switching to this mode: an already-running independent daemon has no TUI owner.
+
+Advanced: explicitly launching `steno-daemon run` without `--owner-pid` or installing a launchd service still enables independent background recording:
 
 ```bash
 steno-daemon run         # Run daemon in foreground

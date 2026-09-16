@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -624,4 +625,31 @@ func TestDefaultProcessIdentifierMissing(t *testing.T) {
 	if path != "" {
 		t.Errorf("expected empty path for missing PID, got %q", path)
 	}
+}
+
+// The daemon must know which TUI owns it, even though it has its own session.
+func TestStartPassesTUIOwnerPID(t *testing.T) {
+	dir := t.TempDir()
+	binary := filepath.Join(dir, "steno-daemon")
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$(dirname \"$0\")/arguments\"\n"
+	if err := os.WriteFile(binary, []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	m := &Manager{BasePath: dir}
+	if err := m.Start(binary); err != nil {
+		t.Fatal(err)
+	}
+	want := "run\n--owner-pid\n" + strconv.Itoa(os.Getpid())
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		data, err := os.ReadFile(filepath.Join(dir, "arguments"))
+		if err == nil && len(data) > 0 {
+			if got := strings.TrimSpace(string(data)); got != want {
+				t.Fatalf("daemon arguments = %q, want %q", got, want)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("daemon did not write its arguments")
 }

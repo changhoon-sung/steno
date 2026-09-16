@@ -13,6 +13,9 @@ struct RunCommand: ParsableCommand {
     @Option(name: .long, help: "Database path (default: ~/Library/Application Support/Steno/steno.sqlite)")
     var dbPath: String?
 
+    @Option(name: .long, help: "Exit when this owning TUI process exits (including crashes)")
+    var ownerPID: Int32?
+
     func run() throws {
         let log = DaemonLogger.daemon
 
@@ -26,6 +29,19 @@ struct RunCommand: ParsableCommand {
         if !gate.isSupported, let message = gate.message {
             FileHandle.standardError.write(Data((message + "\n").utf8))
             throw ExitCode.failure
+        }
+
+        // Arm this before database, permissions, or audio initialization. Before
+        // makeSignalStream is installed, SIGTERM exits immediately; afterwards
+        // it drains the recording engine. Bound the drain so a stuck engine
+        // cannot keep capturing after its TUI has gone away.
+        let ownerMonitor = try ownerPID.map { pid in
+            try OwnerProcessMonitor(pid: pid) {
+                kill(getpid(), SIGTERM)
+                DispatchQueue.global().asyncAfter(deadline: .now() + .seconds(5)) {
+                    kill(getpid(), SIGKILL)
+                }
+            }
         }
 
         // 1. Ensure base directory
@@ -231,6 +247,8 @@ struct RunCommand: ParsableCommand {
         }
 
         // Keep the main RunLoop alive — required by SpeechAnalyzer.
-        dispatchMain()
+        withExtendedLifetime(ownerMonitor) {
+            dispatchMain()
+        }
     }
 }
