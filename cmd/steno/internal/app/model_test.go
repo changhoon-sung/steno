@@ -288,66 +288,19 @@ func TestErrorEvent(t *testing.T) {
 	}
 }
 
-func TestTabTogglesFocus(t *testing.T) {
+func TestTranscriptOnlyNavigation(t *testing.T) {
 	m := New()
-	m.width = 80
-	m.height = 24
-	m.connected = true
-
-	if m.focusedPanel != FocusTranscript {
-		t.Error("should start focused on transcript")
-	}
-
+	m.width, m.height = 80, 24
+	m.transcriptScroll = 3
+	m.transcriptLive = false
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
-	model := updated.(Model)
-	if model.focusedPanel != FocusTopics {
-		t.Error("tab should switch to topics")
+	m = updated.(Model)
+	if m.focusedPanel != FocusTranscript {
+		t.Fatal("tab must not focus removed topics panel")
 	}
-
-	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
-	model = updated.(Model)
-	if model.focusedPanel != FocusTranscript {
-		t.Error("tab again should switch back to transcript")
-	}
-}
-
-func TestTopicNavigation(t *testing.T) {
-	m := New()
-	m.width = 80
-	m.height = 24
-	m.connected = true
-	m.focusedPanel = FocusTopics
-	m.topics = []TopicDisplay{
-		{ID: "1", Title: "Topic A", Summary: "Summary A"},
-		{ID: "2", Title: "Topic B", Summary: "Summary B"},
-		{ID: "3", Title: "Topic C", Summary: "Summary C"},
-	}
-
-	// j moves down
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
-	model := updated.(Model)
-	if model.selectedTopic != 1 {
-		t.Errorf("after j, selectedTopic = %d, want 1", model.selectedTopic)
-	}
-
-	// k moves up
-	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
-	model = updated.(Model)
-	if model.selectedTopic != 0 {
-		t.Errorf("after k, selectedTopic = %d, want 0", model.selectedTopic)
-	}
-
-	// enter toggles expansion
-	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	model = updated.(Model)
-	if !model.topics[0].Expanded {
-		t.Error("enter should expand topic 0")
-	}
-
-	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	model = updated.(Model)
-	if model.topics[0].Expanded {
-		t.Error("enter again should collapse topic 0")
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	if updated.(Model).transcriptScroll != 2 {
+		t.Fatal("k should scroll the transcript upward")
 	}
 }
 
@@ -479,7 +432,6 @@ func captureCommand(t *testing.T, m Model, key tea.KeyMsg) []byte {
 		return nil
 	}
 }
-
 
 func TestSpaceSendsDemarcate(t *testing.T) {
 	m := New()
@@ -1511,8 +1463,8 @@ func TestSystemAudioParkedRenderedInHeader(t *testing.T) {
 func TestSystemAudioParkedNotRenderedWhenSysOff(t *testing.T) {
 	m := New()
 	m.connected = true
-	m.systemAudio = false       // user disabled system audio
-	m.systemAudioParked = true  // stale flag (shouldn't happen, but be defensive)
+	m.systemAudio = false      // user disabled system audio
+	m.systemAudioParked = true // stale flag (shouldn't happen, but be defensive)
 
 	header := m.renderHeader()
 	if strings.Contains(header, "waiting for display") {

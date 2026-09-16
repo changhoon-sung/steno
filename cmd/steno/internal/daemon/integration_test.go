@@ -11,6 +11,10 @@ import (
 // Uses a single connection for both commands and events, matching how the TUI works.
 // Skipped if the daemon socket doesn't exist.
 func TestLiveDaemonStartStop(t *testing.T) {
+	// Explicit opt-in: these tests can stop/restart the running daemon.
+	if os.Getenv("STENO_LIVE_TESTS") != "1" {
+		t.Skip("set STENO_LIVE_TESTS=1 only with a disposable daemon")
+	}
 	sockPath := SocketPath()
 	if _, err := os.Stat(sockPath); os.IsNotExist(err) {
 		t.Skip("daemon not running")
@@ -86,6 +90,10 @@ func TestLiveDaemonStartStop(t *testing.T) {
 // Uses a separate connection for the event stream.
 // Skipped if the daemon socket doesn't exist.
 func TestLiveDaemonEventStream(t *testing.T) {
+	// Explicit opt-in: these tests can stop/restart the running daemon.
+	if os.Getenv("STENO_LIVE_TESTS") != "1" {
+		t.Skip("set STENO_LIVE_TESTS=1 only with a disposable daemon")
+	}
 	sockPath := SocketPath()
 	if _, err := os.Stat(sockPath); os.IsNotExist(err) {
 		t.Skip("daemon not running")

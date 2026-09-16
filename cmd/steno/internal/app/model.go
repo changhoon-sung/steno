@@ -898,12 +898,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// "Speaker 1" again even if the same physical person is
 			// speaking.
 			m.resetSpeakerOrder()
-			if m.store != nil {
-				cmds = append(cmds, loadTopicsCmd(m.store, m.sessionID))
-				if m.showSummary {
-					cmds = append(cmds, loadSummaryCmd(m.store, m.sessionID))
-				}
-			}
+
 		}
 		// On success the daemon will also emit a fresh status / segment
 		// stream against the new session.
@@ -1188,9 +1183,7 @@ func (m *Model) handleEvent(ev daemon.Event) tea.Cmd {
 		return nil
 
 	case "topics":
-		if m.store != nil && m.sessionID != "" {
-			return loadTopicsCmd(m.store, m.sessionID)
-		}
+		// Historical summaries remain available through MCP, not live generation.
 		return nil
 
 	case "error":
@@ -1381,47 +1374,15 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, reconfigureCmd(m.client, !m.systemAudio)
 
-	case "tab":
-		if m.focusedPanel == FocusTopics {
-			m.focusedPanel = FocusTranscript
-		} else {
-			m.focusedPanel = FocusTopics
-		}
+	case "tab", "s", "S", "enter":
+		// This TUI is a transcription surface; summaries/topics are not generated.
 		return m, nil
 
 	case "j":
-		if m.focusedPanel == FocusTopics && len(m.topics) > 0 {
-			if m.selectedTopic < len(m.topics)-1 {
-				m.selectedTopic++
-			}
-		}
-		return m, nil
+		return m.handleKey(tea.KeyMsg{Type: tea.KeyDown})
 
 	case "k":
-		if m.focusedPanel == FocusTopics && len(m.topics) > 0 {
-			if m.selectedTopic > 0 {
-				m.selectedTopic--
-			}
-		}
-		return m, nil
-
-	case "enter":
-		if m.focusedPanel == FocusTopics && m.selectedTopic < len(m.topics) {
-			topic := &m.topics[m.selectedTopic]
-			topic.Expanded = !topic.Expanded
-			if topic.Expanded && topic.Segments == nil && m.store != nil && m.sessionID != "" {
-				return m, loadTopicSegmentsCmd(m.store, m.sessionID, topic.ID,
-					topic.SegmentRangeStart, topic.SegmentRangeEnd)
-			}
-		}
-		return m, nil
-
-	case "s", "S":
-		m.showSummary = !m.showSummary
-		if m.showSummary && m.store != nil && m.sessionID != "" {
-			return m, loadSummaryCmd(m.store, m.sessionID)
-		}
-		return m, nil
+		return m.handleKey(tea.KeyMsg{Type: tea.KeyUp})
 
 	case "up":
 		if m.focusedPanel == FocusTranscript {
@@ -1491,7 +1452,7 @@ func (m Model) transcriptPanelWidth() int {
 	if m.width == 0 {
 		return 60
 	}
-	return max(30, m.width-m.topicPanelWidth()-3)
+	return max(30, m.width)
 }
 
 // View renders the full TUI.
@@ -1645,9 +1606,6 @@ func (m Model) renderStatusBar() string {
 
 	// AI processing spinner.
 	var processing string
-	if m.modelProcessing {
-		processing = ui.SpinnerStyle.Render("⟳ AI")
-	}
 
 	// Pause hint flash (Spacebar-while-paused). Sits at the bottom of
 	// the status bar but rendered inline here for compactness; clears
@@ -1915,9 +1873,13 @@ func conditionalString(cond bool, s string) string {
 
 func renderLevelMeter(label string, level float32) string {
 	const barLen = 8
-	filled := int(level * barLen)
-	if filled > barLen {
-		filled = barLen
+	// Raw PCM peaks are linear: normal speech can be only 0.01–0.04.
+	// Display -60...0 dBFS so those inputs do not round down to silence.
+	filled := 0
+	peak := float64(level)
+	if peak > 0 && !math.IsNaN(peak) && !math.IsInf(peak, 0) {
+		db := 20 * math.Log10(math.Min(peak, 1))
+		filled = int(math.Ceil(math.Max(0, (db+60)/60) * barLen))
 	}
 
 	var bar string
@@ -1944,38 +1906,7 @@ func renderLevelMeter(label string, level float32) string {
 }
 
 func (m Model) renderMainContent() string {
-	topicW := m.topicPanelWidth()
-	transcriptW := m.transcriptPanelWidth()
-	contentH := m.transcriptVisibleLines()
-
-	topicPanel := m.renderTopicPanel(topicW, contentH)
-	transcriptPanel := m.renderTranscriptPanel(transcriptW, contentH)
-
-	divider := ui.DividerStyle.Render("│")
-
-	// Join panels side by side
-	topicLines := strings.Split(topicPanel, "\n")
-	transcriptLines := strings.Split(transcriptPanel, "\n")
-
-	// Pad to same height
-	for len(topicLines) < contentH {
-		topicLines = append(topicLines, strings.Repeat(" ", topicW))
-	}
-	for len(transcriptLines) < contentH {
-		transcriptLines = append(transcriptLines, "")
-	}
-
-	var rows []string
-	for i := 0; i < contentH; i++ {
-		tl := topicLines[i]
-		tr := ""
-		if i < len(transcriptLines) {
-			tr = transcriptLines[i]
-		}
-		rows = append(rows, tl+divider+tr)
-	}
-
-	return strings.Join(rows, "\n")
+	return m.renderTranscriptPanel(m.transcriptPanelWidth(), m.transcriptVisibleLines())
 }
 
 func (m Model) renderTopicPanel(width, height int) string {
@@ -2268,10 +2199,8 @@ func (m Model) renderFooter() string {
 		} else {
 			parts = append(parts, ui.FooterKeyStyle.Render("a")+ui.FooterDescStyle.Render(" Sys Audio On"))
 		}
-		parts = append(parts, ui.FooterKeyStyle.Render("Tab")+ui.FooterDescStyle.Render(" Focus"))
 		parts = append(parts, ui.FooterKeyStyle.Render("j/k")+ui.FooterDescStyle.Render(" Nav"))
 		parts = append(parts, ui.FooterKeyStyle.Render("↑↓")+ui.FooterDescStyle.Render(" Scroll"))
-		parts = append(parts, ui.FooterKeyStyle.Render("s")+ui.FooterDescStyle.Render(" Summary"))
 	}
 
 	parts = append(parts, ui.FooterKeyStyle.Render("q")+ui.FooterDescStyle.Render(" Quit"))

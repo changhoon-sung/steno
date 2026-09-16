@@ -31,7 +31,7 @@ public actor RecordingEngine {
 
     private let repository: TranscriptRepository
     private let permissionService: PermissionService
-    private let summaryCoordinator: RollingSummaryCoordinator
+    private let summaryCoordinator: RollingSummaryCoordinator?
     private let dedupCoordinator: DedupCoordinator?
     private let dedupTriggerDebounce: Duration
     private let audioSourceFactory: AudioSourceFactory
@@ -367,7 +367,7 @@ public actor RecordingEngine {
     public init(
         repository: TranscriptRepository,
         permissionService: PermissionService,
-        summaryCoordinator: RollingSummaryCoordinator,
+        summaryCoordinator: RollingSummaryCoordinator? = nil,
         audioSourceFactory: AudioSourceFactory,
         speechRecognizerFactory: SpeechRecognizerFactory,
         delegate: (any RecordingEngineDelegate)? = nil,
@@ -1295,13 +1295,13 @@ public actor RecordingEngine {
                 }
             }
 
-            // Trigger summary against the session the segment landed on.
-            await emit(.modelProcessing(true))
-            let summaryResult = await summaryCoordinator.onSegmentSaved(sessionId: routingSessionId)
-            await emit(.modelProcessing(false))
-
-            if let summaryResult {
-                await emit(.topicsUpdated(summaryResult.topics))
+            // Optional legacy integration. The daemon does not create a
+            // coordinator, so live transcription never waits on a local LLM.
+            if let summaryCoordinator {
+                await emit(.modelProcessing(true))
+                let result = await summaryCoordinator.onSegmentSaved(sessionId: routingSessionId)
+                await emit(.modelProcessing(false))
+                if let result { await emit(.topicsUpdated(result.topics)) }
             }
         } else {
             await emit(.partialText(result.text, result.source))
