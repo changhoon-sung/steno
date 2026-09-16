@@ -192,7 +192,7 @@ public actor RecordingEngine {
 
     /// Locale captured at start time so the restart path can rebuild
     /// recognizers without re-threading locale through every call.
-    private var currentLocale: Locale = .current
+    public private(set) var currentLocale: Locale = .current
 
     /// Independent backoff policies per source. The mic and system audio
     /// pipelines fail (and recover) independently per the plan: a
@@ -442,7 +442,7 @@ public actor RecordingEngine {
         device: String? = nil,
         systemAudio: Bool = false
     ) async throws -> Session {
-        guard status == .idle || status == .error else {
+        guard status == .idle || status == .error || status == .unsupported else {
             throw RecordingEngineError.alreadyRecording
         }
 
@@ -501,6 +501,7 @@ public actor RecordingEngine {
     /// next-launch convenience, not a runtime requirement.
     private func persistLastKnownAudioConfig(device: String?, systemAudio: Bool) async {
         var settings = StenoSettings.load()
+        settings.lastLocale = currentLocale.identifier(.bcp47)
         settings.lastDevice = device
         settings.lastSystemAudioEnabled = systemAudio
         do {
@@ -2068,7 +2069,13 @@ public actor RecordingEngine {
     ///   in the explicit terminal-but-alive state, not `.error`.
     private func ensureTranscriptionAvailable(locale: Locale) async throws {
         let key = locale.identifier
-        if preparedLocales.contains(key) { return }
+        if preparedLocales.contains(key) {
+            // Switching back after another locale failed must clear its banner.
+            if lastTranscriptionReadiness != .ready {
+                await emitModelStatus(.transcription, .ready)
+            }
+            return
+        }
         await emitModelStatus(.transcription, .preparing)
         switch await transcriptionGate.prepare(locale: locale) {
         case .ready:

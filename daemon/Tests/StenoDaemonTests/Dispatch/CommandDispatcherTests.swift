@@ -353,4 +353,36 @@ struct CommandDispatcherTests {
             speechRecognizerFactory: MockSpeechRecognizerFactory()
         )
     }
+    @Test @MainActor func reconfigureChangesLanguageAndReportsIt() async throws {
+        let (dispatcher, engine, _) = makeDispatcher()
+        _ = try await engine.start(locale: Locale(identifier: "en-US"), systemAudio: true)
+        let before = await engine.currentSession?.id
+        let client = MockClientConnection()
+        await dispatcher.handle(DaemonCommand(cmd: "reconfigure", locale: "ko-KR", systemAudio: true), from: client)
+        let response = try #require(await client.sentResponses.first)
+        #expect(response.ok)
+        #expect(response.locale == "ko-KR")
+        #expect(response.recording == true)
+        #expect(response.systemAudio == true)
+        #expect(await engine.currentSession?.locale.identifier(.bcp47) == "ko-KR")
+        #expect(await engine.currentSession?.id != before)
+        await client.reset()
+        await dispatcher.handle(DaemonCommand(cmd: "status"), from: client)
+        #expect(await client.sentResponses.first?.locale == "ko-KR")
+        await engine.stop()
+    }
+
+    @Test @MainActor func reconfigureDoesNotResumePausedRecording() async throws {
+        let (dispatcher, engine, _) = makeDispatcher()
+        _ = try await engine.start(locale: Locale(identifier: "en-US"))
+        let client = MockClientConnection()
+        await dispatcher.handle(DaemonCommand(cmd: "pause", indefinite: true), from: client)
+        await client.reset()
+        await dispatcher.handle(DaemonCommand(cmd: "reconfigure", locale: "ko-KR", systemAudio: false), from: client)
+        #expect(await client.sentResponses.first?.ok == false)
+        #expect(await engine.status == .paused)
+        #expect(await engine.currentLocale.identifier(.bcp47) == "en-US")
+        await engine.stop()
+    }
+
 }

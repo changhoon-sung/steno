@@ -40,6 +40,7 @@ public struct DaemonCommand: Codable, Sendable {
 
 /// A response from the daemon to a client command.
 public struct DaemonResponse: Codable, Sendable {
+    public var locale: String?
     public var ok: Bool
     public var sessionId: String?
     public var recording: Bool?
@@ -75,8 +76,10 @@ public struct DaemonResponse: Codable, Sendable {
         systemAudio: Bool? = nil,
         paused: Bool? = nil,
         pausedIndefinitely: Bool? = nil,
-        pauseExpiresAt: Double? = nil
+        pauseExpiresAt: Double? = nil,
+        locale: String? = nil
     ) {
+        self.locale = locale
         self.ok = ok
         self.sessionId = sessionId
         self.recording = recording

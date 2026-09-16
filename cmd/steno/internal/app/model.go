@@ -244,6 +244,12 @@ type Model struct {
 	summaryText string
 	showSummary bool
 
+	// Transcription language, confirmed by the daemon.
+	locale             string
+	showLanguagePicker bool
+	selectedLanguage   int
+	pendingLanguage    string
+
 	// UI state
 	focusedPanel     PanelFocus
 	width            int
@@ -661,8 +667,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusText = "Daemon not running. Reconnecting..."
 		return m, reconnectCmd(m.reconnectAttempt)
 
+	case LanguageResponseMsg:
+		m.pendingLanguage = ""
+		if msg.Err != nil {
+			return m.Update(DaemonEventErrorMsg{Err: msg.Err})
+		}
+		if !msg.Response.OK {
+			m.errorMessage = msg.Response.Error
+			m.errorTransient = true
+			return m, tea.Batch(clearTransientErrorCmd(), statusCmd(m.client))
+		}
+		m.errorMessage = ""
+		m.partials = make(map[string]string)
+		if msg.Response.SessionID != m.sessionID {
+			m.entries = append(m.entries, TranscriptEntry{IsBoundary: true, Timestamp: time.Now()})
+		}
+		return m.Update(StatusResponseMsg{Response: msg.Response})
+
 	case StatusResponseMsg:
 		r := msg.Response
+		if r.Locale != "" {
+			m.locale = r.Locale
+		}
 		if r.Recording != nil {
 			m.recording = *r.Recording
 		}
@@ -697,6 +723,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case StartResponseMsg:
 		r := msg.Response
+		if r.OK && r.Locale != "" {
+			m.locale = r.Locale
+		}
 		if r.OK {
 			m.recording = true
 			if r.SessionID != "" {
@@ -1257,6 +1286,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Quit still reaches the normal quit handler while the picker is open.
+	if m.showLanguagePicker && msg.String() != KeyQuit && msg.String() != KeyQuitUpper && msg.String() != KeyCtrlC {
+		return m.handleLanguageKey(msg)
+	}
+
 	// Error modal intercepts e / esc to close.
 	if m.showErrorModal {
 		switch msg.String() {
@@ -1324,6 +1358,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case KeyErrorHistory, KeyErrorHistoryUp:
 		// U9: toggle error-history modal.
 		m.showErrorModal = !m.showErrorModal
+		return m, nil
+
+	case KeyLanguage:
+		if !m.connected || m.client == nil || m.pendingLanguage != "" {
+			return m, nil
+		}
+		m.showLanguagePicker = true
+		m.selectedLanguage = languageIndex(m.locale)
 		return m, nil
 
 	case KeySystemAudio:
@@ -1483,7 +1525,11 @@ func (m Model) View() string {
 	}
 
 	// Main content: topics | transcript
-	sections = append(sections, m.renderMainContent())
+	if m.showLanguagePicker {
+		sections = append(sections, m.renderLanguagePicker())
+	} else {
+		sections = append(sections, m.renderMainContent())
+	}
 
 	// Divider
 	sections = append(sections, ui.DividerStyle.Render(strings.Repeat("─", m.width)))
@@ -1571,7 +1617,11 @@ func (m Model) renderHeader() string {
 		}
 	}
 
-	return title + deviceInfo + audioMode
+	language := languageLabel(m.locale)
+	if m.pendingLanguage != "" {
+		language += " → " + languageLabel(m.pendingLanguage) + "…"
+	}
+	return title + deviceInfo + audioMode + ui.DimStyle.Render(" ["+language+"]")
 }
 
 // renderStatusBar produces the U9 health-surface status bar. State
@@ -2209,6 +2259,7 @@ func (m Model) renderFooter() string {
 			parts = append(parts, ui.FooterKeyStyle.Render("p")+ui.FooterDescStyle.Render(" Pause 30m"))
 			parts = append(parts, ui.FooterKeyStyle.Render("P")+ui.FooterDescStyle.Render(" Pause"))
 		}
+		parts = append(parts, ui.FooterKeyStyle.Render("l")+ui.FooterDescStyle.Render(" Language"))
 		parts = append(parts, ui.FooterKeyStyle.Render("e")+ui.FooterDescStyle.Render(" Errors"))
 		// Sys-audio toggle. Label shows the action the keypress will perform
 		// (the opposite of the current state) so it doubles as a status hint.

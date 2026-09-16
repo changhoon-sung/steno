@@ -230,4 +230,24 @@ struct RuntimeGatesTests {
         #expect(ModelReadiness.ready.reason == nil)
         #expect(ModelReadiness.unavailable(reason: "boom").reason == "boom")
     }
+    private struct EnglishOnlyGate: TranscriptionModelGate {
+        func prepare(locale: Locale) async -> TranscriptionGateOutcome {
+            locale.identifier.hasPrefix("en") ? .ready : .unavailable(reason: "Test model unavailable")
+        }
+    }
+
+    @Test func switchingBackAfterLanguageFailureClearsUnavailableReadiness() async throws {
+        let (engine, _, _) = await makeEngine(gate: EnglishOnlyGate())
+        _ = try await engine.start(locale: Locale(identifier: "en-US"))
+        await engine.stop()
+        await #expect(throws: (any Error).self) {
+            _ = try await engine.start(locale: Locale(identifier: "ko-KR"))
+        }
+        _ = try await engine.start(locale: Locale(identifier: "en-US"))
+        #expect(await engine.status == .recording)
+        let readiness = await engine.currentModelReadiness()
+        #expect(readiness.first { $0.0 == .transcription }?.1 == .ready)
+        await engine.stop()
+    }
+
 }

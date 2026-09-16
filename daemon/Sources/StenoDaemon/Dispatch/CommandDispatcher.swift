@@ -97,7 +97,8 @@ public actor CommandDispatcher {
             return DaemonResponse(
                 ok: true,
                 sessionId: session.id.uuidString,
-                recording: true
+                recording: true,
+                locale: session.locale.identifier(.bcp47)
             )
         } catch {
             return DaemonResponse.failure(error.localizedDescription)
@@ -109,16 +110,14 @@ public actor CommandDispatcher {
         return DaemonResponse(ok: true, recording: false)
     }
 
-    /// Reconfigure capture sources on the live session. Today the only
-    /// reconfigurable axis is `systemAudio` — the TUI uses this for the `a`
-    /// keybind that toggles system-audio capture without requiring the user
-    /// to edit `settings.json` and restart the daemon. The session's existing
-    /// locale and device are preserved unless the command overrides them.
+    /// Reconfigure capture sources or transcription language on the live
+    /// session. The TUI uses this for the `a` toggle and `l` language picker.
+    /// The existing locale and device are preserved unless overridden.
     ///
     /// Implemented as stop + start so the daemon doesn't have to grow a
     /// mid-flight capture-graph mutation path. The brief stop is tolerable
-    /// for an explicit user action; `start` persists `lastSystemAudioEnabled`
-    /// so every subsequent auto-start picks up the new value.
+    /// for an explicit user action; `start` persists the language and audio
+    /// choices so subsequent auto-starts restore them.
     private func handleReconfigure(_ command: DaemonCommand) async -> DaemonResponse {
         guard let newSystemAudio = command.systemAudio else {
             return DaemonResponse.failure(
@@ -126,6 +125,9 @@ public actor CommandDispatcher {
             )
         }
 
+        guard await engine.status != .paused else {
+            return DaemonResponse.failure("Press p to resume before changing recording settings")
+        }
         let currentSession = await engine.currentSession
         let currentDevice = await engine.currentDevice
         let locale: Locale
@@ -148,8 +150,10 @@ public actor CommandDispatcher {
                 ok: true,
                 sessionId: session.id.uuidString,
                 recording: true,
+                status: "recording",
                 device: command.device ?? currentDevice,
-                systemAudio: newSystemAudio
+                systemAudio: newSystemAudio,
+                locale: session.locale.identifier(.bcp47)
             )
         } catch {
             return DaemonResponse.failure(error.localizedDescription)
@@ -163,6 +167,7 @@ public actor CommandDispatcher {
         let device = await engine.currentDevice
         let systemAudio = await engine.isSystemAudioEnabled
         let pause = await engine.pauseStateSnapshot()
+        let locale = await engine.currentLocale
 
         return DaemonResponse(
             ok: true,
@@ -174,7 +179,8 @@ public actor CommandDispatcher {
             systemAudio: systemAudio,
             paused: pause.paused,
             pausedIndefinitely: pause.indefinite,
-            pauseExpiresAt: pause.expiresAt?.timeIntervalSince1970
+            pauseExpiresAt: pause.expiresAt?.timeIntervalSince1970,
+            locale: locale.identifier(.bcp47)
         )
     }
 
