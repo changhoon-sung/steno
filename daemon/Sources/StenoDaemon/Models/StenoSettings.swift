@@ -34,6 +34,13 @@ public struct StenoSettings: Codable, Sendable {
     /// Anthropic model to use.
     public var anthropicModel: String
 
+    /// Last successfully selected transcription language (BCP-47).
+    public var lastLocale: String?
+
+    public var transcriptionLocale: Locale {
+        lastLocale.map { Locale(identifier: $0) } ?? .current
+    }
+
     /// Last device string used in a successful `start(...)` call. Used by
     /// U4's daemon-start auto-start path to restore the user's last-known
     /// microphone selection. `nil` means "use the system default mic" —
@@ -127,6 +134,7 @@ public struct StenoSettings: Codable, Sendable {
         summarizationProvider: SummarizationProvider = .local,
         anthropicAPIKey: String? = nil,
         anthropicModel: String = "claude-3-5-haiku-20241022",
+        lastLocale: String? = nil,
         lastDevice: String? = nil,
         lastSystemAudioEnabled: Bool = true,
         healGapSeconds: Int = 30,
@@ -143,6 +151,7 @@ public struct StenoSettings: Codable, Sendable {
         self.summarizationProvider = summarizationProvider
         self.anthropicAPIKey = anthropicAPIKey
         self.anthropicModel = anthropicModel
+        self.lastLocale = lastLocale
         self.lastDevice = lastDevice
         self.lastSystemAudioEnabled = lastSystemAudioEnabled
         self.healGapSeconds = healGapSeconds
@@ -166,6 +175,7 @@ public struct StenoSettings: Codable, Sendable {
         case summarizationProvider
         case anthropicAPIKey
         case anthropicModel
+        case lastLocale
         case lastDevice
         case lastSystemAudioEnabled
         case healGapSeconds
@@ -185,6 +195,7 @@ public struct StenoSettings: Codable, Sendable {
         self.summarizationProvider = try container.decodeIfPresent(SummarizationProvider.self, forKey: .summarizationProvider) ?? .local
         self.anthropicAPIKey = try container.decodeIfPresent(String.self, forKey: .anthropicAPIKey)
         self.anthropicModel = try container.decodeIfPresent(String.self, forKey: .anthropicModel) ?? "claude-3-5-haiku-20241022"
+        self.lastLocale = try container.decodeIfPresent(String.self, forKey: .lastLocale)
         self.lastDevice = try container.decodeIfPresent(String.self, forKey: .lastDevice)
         self.lastSystemAudioEnabled = try container.decodeIfPresent(Bool.self, forKey: .lastSystemAudioEnabled) ?? true
         self.healGapSeconds = try container.decodeIfPresent(Int.self, forKey: .healGapSeconds) ?? 30
@@ -204,6 +215,10 @@ public struct StenoSettings: Codable, Sendable {
     // MARK: - Persistence
 
     private static var settingsURL: URL {
+        // Allows tests/development launches to avoid changing personal settings.
+        if let path = ProcessInfo.processInfo.environment["STENO_SETTINGS_PATH"] {
+            return URL(fileURLWithPath: path)
+        }
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let stenoDir = appSupport.appendingPathComponent("Steno")
         return stenoDir.appendingPathComponent("settings.json")
@@ -227,6 +242,6 @@ public struct StenoSettings: Codable, Sendable {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
         let data = try JSONEncoder().encode(self)
-        try data.write(to: url)
+        try data.write(to: url, options: .atomic)
     }
 }

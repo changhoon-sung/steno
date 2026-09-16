@@ -28,6 +28,7 @@ type Command struct {
 
 // Response is returned by the daemon after processing a command.
 type Response struct {
+	Locale      string   `json:"locale,omitempty"`
 	OK          bool     `json:"ok"`
 	SessionID   string   `json:"sessionId,omitempty"`
 	Recording   *bool    `json:"recording,omitempty"`

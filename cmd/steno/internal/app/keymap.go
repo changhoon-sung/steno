@@ -46,4 +46,5 @@ const (
 	KeyEsc             = "esc"
 	// System-audio toggle (protocol-level reconfigure).
 	KeySystemAudio = "a"
+	KeyLanguage    = "l"
 )

@@ -188,7 +188,7 @@ struct RunCommand: ParsableCommand {
                 // restore the last-known device + systemAudio choice.
                 do {
                     _ = try await engine.recoverOrphansAndAutoStart(
-                        locale: .current,
+                        locale: settings.transcriptionLocale,
                         device: settings.lastDevice,
                         systemAudio: settings.lastSystemAudioEnabled
                     )

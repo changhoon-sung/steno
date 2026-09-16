@@ -21,7 +21,7 @@ This fork defaults to TUI-owned daemon lifetime. Build it from source:
 ```bash
 git clone https://github.com/changhoon-sung/steno.git
 cd steno
-git checkout fix/tui-owned-daemon
+git checkout feat/tui-language-picker
 make install
 ```
 
@@ -74,7 +74,14 @@ Running `steno` starts a daemon owned by that TUI. Quitting with `q`, closing th
 | `j`/`k` | Navigate topics |
 | `Enter` | Expand/collapse topic |
 | `Up`/`Down` | Scroll transcript |
+| `l` | Select transcription language (English / 한국어) |
 | `q` | Quit and stop the daemon owned by this TUI |
+
+### Transcription language
+
+Press `l`, use `↑` / `↓` (or `j` / `k`) to choose **English** or **한국어**, and press `Enter`. `Esc` cancels. The header shows the language confirmed by the daemon; the choice is saved for the next launch. Changing language briefly restarts recording in a new session. On first use, Apple's speech model may need to download.
+
+While paused, the picker shows a reminder to close it with `Esc` and resume with `p` before changing language. Selecting a language never implicitly resumes a pause.
 
 ### MCP Server
 
