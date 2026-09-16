@@ -66,8 +66,11 @@ func runMCP() {
 		version.Current,
 		server.WithToolCapabilities(false),
 		server.WithInstructions("Steno MCP server provides read-only access to the Steno speech-to-text database. "+
-			"Use get_overview first to orient yourself, then drill into sessions with list_sessions and get_session, "+
-			"read transcripts with get_transcript, and search across all data with search."),
+			"Use get_overview once to choose a session. Then prefer read_transcript with that session_id and "+
+			"after_sequence set to the previous next_sequence, to receive only new text. Keep a separate cursor per session; "+
+			"drain has_more pages and rediscover the active session when session_status reports a boundary. "+
+			"Use get_transcript only when timestamps/source metadata or full historical detail are needed. "+
+			"list_sessions, get_session and search provide optional exploration."),
 	)
 
 	stenoMCP.RegisterTools(s, store)

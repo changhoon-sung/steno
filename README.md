@@ -21,7 +21,7 @@ This fork defaults to TUI-owned daemon lifetime. Build it from source:
 ```bash
 git clone https://github.com/changhoon-sung/steno.git
 cd steno
-git checkout fix/meter-smoothing
+git checkout feat/transcript-delta
 make install
 ```
 
@@ -109,7 +109,25 @@ Add to your MCP client config:
 }
 ```
 
-Available tools: `get_overview`, `list_sessions`, `get_session`, `get_transcript`, `search`.
+Available tools: `get_overview`, `list_sessions`, `get_session`, `read_transcript`, `get_transcript`, `search`.
+
+For repeated lecture context updates, find the session once, then use:
+
+```json
+{"session_id":"…","after_sequence":73,"limit":100}
+```
+
+with `read_transcript`. Its compact response is:
+
+```json
+{"text":"Newly finalized speech…","next_sequence":81,"has_more":false}
+```
+
+Pass `next_sequence` as the next `after_sequence`. Empty `text` means no new content in that snapshot. If `has_more` is true, continue with the returned cursor. Each caller keeps its own cursor; reading never deletes or globally consumes data.
+
+This feed follows finalization/sequence order, so audio that finishes recognition late is still delivered. It filters duplicates known at read time; later deduplication/corrections are not replayed. `session_status` appears only when the session is no longer active, prompting discovery of another session. Use `get_transcript` when timestamps, source labels, chronological history, or other diagnostics are needed. Its time filter is named `after`, not `since`.
+
+Reconnect an already-running MCP server after updating Steno to load the new tool.
 
 ### Daemon Management
 
