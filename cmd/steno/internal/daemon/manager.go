@@ -185,7 +185,7 @@ func FindBinary() (string, error) {
 	return path, nil
 }
 
-// Start spawns the daemon as a detached process that outlives the caller.
+// Start spawns a daemon whose lifetime is bounded by the calling TUI.
 // stdout/stderr are redirected to the daemon log file.
 func (m *Manager) Start(binaryPath string) error {
 	// Ensure base directory exists
@@ -198,7 +198,7 @@ func (m *Manager) Start(binaryPath string) error {
 		return fmt.Errorf("open log file: %w", err)
 	}
 
-	cmd := exec.Command(binaryPath, "run")
+	cmd := exec.Command(binaryPath, "run", "--owner-pid", strconv.Itoa(os.Getpid()))
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	cmd.SysProcAttr = &syscall.SysProcAttr{
@@ -210,10 +210,9 @@ func (m *Manager) Start(binaryPath string) error {
 		return fmt.Errorf("start daemon: %w", err)
 	}
 
-	// Release the process so it outlives us — don't call cmd.Wait()
-	if cmd.Process != nil {
-		cmd.Process.Release()
-	}
+	// Reap failed/exited children while the TUI is alive. The daemon also
+	// watches our PID, so TUI crashes and SIGKILL do not leave it recording.
+	go func() { _ = cmd.Wait() }()
 
 	logFile.Close()
 	return nil
