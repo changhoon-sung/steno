@@ -16,6 +16,7 @@ func RegisterTools(s *server.MCPServer, store *db.Store) {
 	registerOverview(s, store)
 	registerSessions(s, store)
 	registerTranscript(s, store)
+	registerTranscriptDelta(s, store)
 	registerSearch(s, store)
 }
 
