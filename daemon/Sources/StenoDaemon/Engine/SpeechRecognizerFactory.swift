@@ -52,4 +52,14 @@ public protocol SpeechRecognizerFactory: Sendable {
     /// Create a new recognizer for the given locale, audio format, and source type.
     func makeRecognizer(locale: Locale, format: AVAudioFormat, source: AudioSourceType)
         async throws -> SpeechRecognizerHandle
+
+    func makeRecognizer(locale: Locale, format: AVAudioFormat, source: AudioSourceType, fastResults: Bool)
+        async throws -> SpeechRecognizerHandle
+}
+
+extension SpeechRecognizerFactory {
+    public func makeRecognizer(locale: Locale, format: AVAudioFormat, source: AudioSourceType, fastResults: Bool)
+        async throws -> SpeechRecognizerHandle {
+        try await makeRecognizer(locale: locale, format: format, source: source)
+    }
 }

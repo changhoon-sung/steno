@@ -234,6 +234,8 @@ type Model struct {
 	// Audio levels
 	micLevel float32
 	sysLevel float32
+	micMeter meterEnvelope
+	sysMeter meterEnvelope
 
 	// Topics
 	topics          []TopicDisplay
@@ -245,10 +247,13 @@ type Model struct {
 	showSummary bool
 
 	// Transcription language, confirmed by the daemon.
-	locale             string
-	showLanguagePicker bool
-	selectedLanguage   int
-	pendingLanguage    string
+	locale                  string
+	showLanguagePicker      bool
+	selectedLanguage        int
+	pendingLanguage         string
+	lowLatencyTranscription bool
+	lowLatencySupported     bool
+	modePending             bool
 
 	// UI state
 	focusedPanel     PanelFocus
@@ -655,6 +660,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		)
 
 	case DaemonConnectErrorMsg:
+		m.resetLevelMeters()
 		m.connected = false
 		m.connError = msg.Err.Error()
 		// If the daemon binary isn't found, don't reconnect — it's a fatal config error
@@ -666,6 +672,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.reconnecting = true
 		m.statusText = "Daemon not running. Reconnecting..."
 		return m, reconnectCmd(m.reconnectAttempt)
+
+	case FastModeResponseMsg:
+		m.modePending = false
+		if msg.Err != nil {
+			return m.Update(DaemonEventErrorMsg{Err: msg.Err})
+		}
+		if !msg.Response.OK || msg.Response.LowLatencyTranscription == nil {
+			m.errorMessage = msg.Response.Error
+			if m.errorMessage == "" {
+				m.errorMessage = "Restart Steno to enable mode switching."
+			}
+			m.errorTransient = true
+			return m, tea.Batch(clearTransientErrorCmd(), statusCmd(m.client))
+		}
+		m.errorMessage = ""
+		m.partials = make(map[string]string)
+		if msg.Response.SessionID != "" && msg.Response.SessionID != m.sessionID {
+			m.entries = append(m.entries, TranscriptEntry{IsBoundary: true, Timestamp: time.Now()})
+		}
+		return m.Update(StatusResponseMsg{Response: msg.Response})
 
 	case LanguageResponseMsg:
 		m.pendingLanguage = ""
@@ -686,6 +712,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case StatusResponseMsg:
 		r := msg.Response
+		m.lowLatencySupported = r.LowLatencyTranscription != nil
+		if r.LowLatencyTranscription != nil {
+			m.lowLatencyTranscription = *r.LowLatencyTranscription
+		}
 		if r.Locale != "" {
 			m.locale = r.Locale
 		}
@@ -723,6 +753,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case StartResponseMsg:
 		r := msg.Response
+		if r.OK && r.LowLatencyTranscription != nil {
+			m.lowLatencySupported = true
+			m.lowLatencyTranscription = *r.LowLatencyTranscription
+		}
 		if r.OK && r.Locale != "" {
 			m.locale = r.Locale
 		}
@@ -756,6 +790,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		r := msg.Response
 		if r.OK {
 			m.recording = false
+			m.resetLevelMeters()
 			m.partials = make(map[string]string)
 			m.statusText = "Idle"
 		} else {
@@ -769,6 +804,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmd, readEventCmd(m.evClient))
 
 	case DaemonEventErrorMsg:
+		m.resetLevelMeters()
 		m.connected = false
 		m.connError = msg.Err.Error()
 		m.statusText = "Disconnected. Reconnecting..."
@@ -930,6 +966,7 @@ func (m *Model) applyPauseFields(paused, indefinite *bool, expiresAt *float64) {
 		return
 	}
 	if *paused {
+		m.resetLevelMeters()
 		m.engineStatus = StatusPaused
 		// Pausing tears down the sys pipeline, so any prior parked
 		// state is no longer meaningful. Clear the chip annotation.
@@ -1096,11 +1133,14 @@ func (m *Model) handleEvent(ev daemon.Event) tea.Cmd {
 		m.lastSegmentAt = time.Now()
 
 	case "level":
+		now := time.Now()
 		if ev.Mic != nil {
 			m.micLevel = *ev.Mic
+			m.micMeter.update(*ev.Mic, now)
 		}
 		if ev.Sys != nil {
 			m.sysLevel = *ev.Sys
+			m.sysMeter.update(*ev.Sys, now)
 		}
 
 	case "status":
@@ -1112,6 +1152,7 @@ func (m *Model) handleEvent(ev daemon.Event) tea.Cmd {
 				// Successful recording resumes clear permission-revoked.
 				m.permissionRevoked = false
 			} else {
+				m.resetLevelMeters()
 				// Status with recording=false in the always-on world
 				// most likely means paused. Don't blindly write "Idle"
 				// over a known paused state.
@@ -1353,8 +1394,20 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.showErrorModal = !m.showErrorModal
 		return m, nil
 
+	case "f", "F":
+		if !m.connected || m.client == nil || m.modePending || m.pendingLanguage != "" {
+			return m, nil
+		}
+		if !m.lowLatencySupported {
+			m.errorMessage = "Restart Steno to enable mode switching."
+			m.errorTransient = true
+			return m, clearTransientErrorCmd()
+		}
+		m.modePending = true
+		return m, fastModeCmd(m.client, !m.lowLatencyTranscription, m.systemAudio)
+
 	case KeyLanguage:
-		if !m.connected || m.client == nil || m.pendingLanguage != "" {
+		if !m.connected || m.client == nil || m.pendingLanguage != "" || m.modePending {
 			return m, nil
 		}
 		m.showLanguagePicker = true
@@ -1362,6 +1415,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case KeySystemAudio:
+		if m.modePending || m.pendingLanguage != "" {
+			return m, nil
+		}
 		// Toggle system-audio capture via the daemon's `reconfigure`
 		// command. Refuse while paused — the daemon would reject the
 		// implicit start anyway, and the flash hint is friendlier than a
@@ -1582,7 +1638,17 @@ func (m Model) renderHeader() string {
 	if m.pendingLanguage != "" {
 		language += " → " + languageLabel(m.pendingLanguage) + "…"
 	}
-	return title + deviceInfo + audioMode + ui.DimStyle.Render(" ["+language+"]")
+	mode := ""
+	if m.lowLatencySupported {
+		mode = " [ACCURATE]"
+		if m.lowLatencyTranscription {
+			mode = " [LOW LATENCY]"
+		}
+		if m.modePending {
+			mode = " [Switching mode…]"
+		}
+	}
+	return title + deviceInfo + audioMode + ui.DimStyle.Render(" ["+language+"]"+mode)
 }
 
 // renderStatusBar produces the U9 health-surface status bar. State
@@ -1598,9 +1664,9 @@ func (m Model) renderStatusBar() string {
 	// Level meters. Only meaningful while recording or recovering.
 	var meters string
 	if isRecording {
-		meters = renderLevelMeter("MIC", m.micLevel)
+		meters = renderSmoothedMeter("MIC", m.micLevel, m.micMeter, time.Now())
 		if m.systemAudio {
-			meters += "  " + renderLevelMeter("SYS", m.sysLevel)
+			meters += "  " + renderSmoothedMeter("SYS", m.sysLevel, m.sysMeter, time.Now())
 		}
 	}
 
@@ -1872,15 +1938,11 @@ func conditionalString(cond bool, s string) string {
 }
 
 func renderLevelMeter(label string, level float32) string {
-	const barLen = 8
-	// Raw PCM peaks are linear: normal speech can be only 0.01–0.04.
-	// Display -60...0 dBFS so those inputs do not round down to silence.
-	filled := 0
-	peak := float64(level)
-	if peak > 0 && !math.IsNaN(peak) && !math.IsInf(peak, 0) {
-		db := 20 * math.Log10(math.Min(peak, 1))
-		filled = int(math.Ceil(math.Max(0, (db+60)/60) * barLen))
-	}
+	return renderMeterCells(label, int(math.Round(meterFraction(level)*meterCells)))
+}
+
+func renderMeterCells(label string, filled int) string {
+	const barLen = meterCells
 
 	var bar string
 	for i := 0; i < barLen; i++ {
@@ -2190,6 +2252,14 @@ func (m Model) renderFooter() string {
 			parts = append(parts, ui.FooterKeyStyle.Render("p")+ui.FooterDescStyle.Render(" Pause 30m"))
 			parts = append(parts, ui.FooterKeyStyle.Render("P")+ui.FooterDescStyle.Render(" Pause"))
 		}
+		mode := " Low latency"
+		if m.lowLatencySupported {
+			mode = " Low latency:off"
+			if m.lowLatencyTranscription {
+				mode = " Low latency:on"
+			}
+		}
+		parts = append(parts, ui.FooterKeyStyle.Render("f")+ui.FooterDescStyle.Render(mode))
 		parts = append(parts, ui.FooterKeyStyle.Render("l")+ui.FooterDescStyle.Render(" Language"))
 		parts = append(parts, ui.FooterKeyStyle.Render("e")+ui.FooterDescStyle.Render(" Errors"))
 		// Sys-audio toggle. Label shows the action the keypress will perform

@@ -107,6 +107,14 @@ final class MockSpeechRecognizerFactory: SpeechRecognizerFactory, @unchecked Sen
     /// All sys handles produced so far (queue mode), in order.
     private(set) var producedSysHandles: [MockSpeechRecognizerHandle] = []
 
+    private(set) var lastFastResults = false
+
+    func makeRecognizer(locale: Locale, format: AVAudioFormat, source: AudioSourceType, fastResults: Bool)
+        async throws -> SpeechRecognizerHandle {
+        lastFastResults = fastResults
+        return try await makeRecognizer(locale: locale, format: format, source: source)
+    }
+
     func makeRecognizer(locale: Locale, format: AVAudioFormat, source: AudioSourceType)
         async throws -> SpeechRecognizerHandle {
         recognizerCreated = true
