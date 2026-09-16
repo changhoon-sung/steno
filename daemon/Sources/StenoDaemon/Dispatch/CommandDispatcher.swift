@@ -98,7 +98,8 @@ public actor CommandDispatcher {
                 ok: true,
                 sessionId: session.id.uuidString,
                 recording: true,
-                locale: session.locale.identifier(.bcp47)
+                locale: session.locale.identifier(.bcp47),
+                lowLatencyTranscription: await engine.lowLatencyTranscription
             )
         } catch {
             return DaemonResponse.failure(error.localizedDescription)
@@ -125,8 +126,18 @@ public actor CommandDispatcher {
             )
         }
 
-        guard await engine.status != .paused else {
-            return DaemonResponse.failure("Press p to resume before changing recording settings")
+        if await engine.status == .paused {
+            // A mode-only change is safe without resuming capture. Language
+            // and source changes still require an explicit resume.
+            guard let enabled = command.lowLatencyTranscription,
+                  command.locale == nil, command.device == nil,
+                  newSystemAudio == (await engine.isSystemAudioEnabled) else {
+                return DaemonResponse.failure("Press p to resume before changing recording settings")
+            }
+            do {
+                try await engine.configureLowLatency(enabled)
+                return await handleStatus()
+            } catch { return DaemonResponse.failure(error.localizedDescription) }
         }
         let currentSession = await engine.currentSession
         let currentDevice = await engine.currentDevice
@@ -139,8 +150,10 @@ public actor CommandDispatcher {
             locale = .current
         }
 
+        let previousMode = await engine.lowLatencyTranscription
         await engine.stop()
         do {
+            try await engine.configureLowLatency(command.lowLatencyTranscription ?? previousMode)
             let session = try await engine.start(
                 locale: locale,
                 device: command.device ?? currentDevice,
@@ -153,9 +166,11 @@ public actor CommandDispatcher {
                 status: "recording",
                 device: command.device ?? currentDevice,
                 systemAudio: newSystemAudio,
-                locale: session.locale.identifier(.bcp47)
+                locale: session.locale.identifier(.bcp47),
+                lowLatencyTranscription: await engine.lowLatencyTranscription
             )
         } catch {
+            try? await engine.configureLowLatency(previousMode)
             return DaemonResponse.failure(error.localizedDescription)
         }
     }
@@ -180,7 +195,8 @@ public actor CommandDispatcher {
             paused: pause.paused,
             pausedIndefinitely: pause.indefinite,
             pauseExpiresAt: pause.expiresAt?.timeIntervalSince1970,
-            locale: locale.identifier(.bcp47)
+            locale: locale.identifier(.bcp47),
+            lowLatencyTranscription: await engine.lowLatencyTranscription
         )
     }
 

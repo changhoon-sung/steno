@@ -8,11 +8,12 @@ package daemon
 // when adding fields here, add them on the Swift side too. Field names
 // must match the JSON keys exactly.
 type Command struct {
-	Cmd         string   `json:"cmd"`
-	Locale      string   `json:"locale,omitempty"`
-	Device      string   `json:"device,omitempty"`
-	SystemAudio *bool    `json:"systemAudio,omitempty"`
-	Events      []string `json:"events,omitempty"`
+	LowLatencyTranscription *bool    `json:"lowLatencyTranscription,omitempty"`
+	Cmd                     string   `json:"cmd"`
+	Locale                  string   `json:"locale,omitempty"`
+	Device                  string   `json:"device,omitempty"`
+	SystemAudio             *bool    `json:"systemAudio,omitempty"`
+	Events                  []string `json:"events,omitempty"`
 
 	// AutoResumeSeconds is the wall-clock window (seconds from now)
 	// after which a `pause` command auto-resumes. Nil + Indefinite=nil
@@ -28,16 +29,17 @@ type Command struct {
 
 // Response is returned by the daemon after processing a command.
 type Response struct {
-	Locale      string   `json:"locale,omitempty"`
-	OK          bool     `json:"ok"`
-	SessionID   string   `json:"sessionId,omitempty"`
-	Recording   *bool    `json:"recording,omitempty"`
-	Segments    *int     `json:"segments,omitempty"`
-	Devices     []string `json:"devices,omitempty"`
-	Error       string   `json:"error,omitempty"`
-	Status      string   `json:"status,omitempty"`
-	Device      string   `json:"device,omitempty"`
-	SystemAudio *bool    `json:"systemAudio,omitempty"`
+	LowLatencyTranscription *bool    `json:"lowLatencyTranscription,omitempty"`
+	Locale                  string   `json:"locale,omitempty"`
+	OK                      bool     `json:"ok"`
+	SessionID               string   `json:"sessionId,omitempty"`
+	Recording               *bool    `json:"recording,omitempty"`
+	Segments                *int     `json:"segments,omitempty"`
+	Devices                 []string `json:"devices,omitempty"`
+	Error                   string   `json:"error,omitempty"`
+	Status                  string   `json:"status,omitempty"`
+	Device                  string   `json:"device,omitempty"`
+	SystemAudio             *bool    `json:"systemAudio,omitempty"`
 
 	// Paused is true when the engine is currently in `.paused` state.
 	// Surfaced on `status` and `pause` / `resume` responses so a

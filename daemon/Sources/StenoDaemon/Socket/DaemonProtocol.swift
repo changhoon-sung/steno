@@ -2,6 +2,7 @@ import Foundation
 
 /// A command sent from a client to the daemon over the Unix socket.
 public struct DaemonCommand: Codable, Sendable {
+    public let lowLatencyTranscription: Bool?
     public let cmd: String
     public let locale: String?
     public let device: String?
@@ -26,8 +27,10 @@ public struct DaemonCommand: Codable, Sendable {
         systemAudio: Bool? = nil,
         events: [String]? = nil,
         autoResumeSeconds: Double? = nil,
-        indefinite: Bool? = nil
+        indefinite: Bool? = nil,
+        lowLatencyTranscription: Bool? = nil
     ) {
+        self.lowLatencyTranscription = lowLatencyTranscription
         self.cmd = cmd
         self.locale = locale
         self.device = device
@@ -40,6 +43,7 @@ public struct DaemonCommand: Codable, Sendable {
 
 /// A response from the daemon to a client command.
 public struct DaemonResponse: Codable, Sendable {
+    public var lowLatencyTranscription: Bool?
     public var locale: String?
     public var ok: Bool
     public var sessionId: String?
@@ -77,9 +81,11 @@ public struct DaemonResponse: Codable, Sendable {
         paused: Bool? = nil,
         pausedIndefinitely: Bool? = nil,
         pauseExpiresAt: Double? = nil,
-        locale: String? = nil
+        locale: String? = nil,
+        lowLatencyTranscription: Bool? = nil
     ) {
         self.locale = locale
+        self.lowLatencyTranscription = lowLatencyTranscription
         self.ok = ok
         self.sessionId = sessionId
         self.recording = recording

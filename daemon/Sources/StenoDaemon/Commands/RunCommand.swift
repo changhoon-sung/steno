@@ -106,7 +106,8 @@ struct RunCommand: ParsableCommand {
                     retentionDays: settings.retentionDays,
                     // #62: real Layer-A availability gate (hardware + ASR asset).
                     // Tests default to the permissive `ReadyTranscriptionModelGate`.
-                    transcriptionGate: DefaultTranscriptionModelGate()
+                    transcriptionGate: DefaultTranscriptionModelGate(),
+                    lowLatencyTranscription: settings.lowLatencyTranscription
                 )
 
                 let dispatcher = CommandDispatcher(engine: engine, broadcaster: broadcaster)

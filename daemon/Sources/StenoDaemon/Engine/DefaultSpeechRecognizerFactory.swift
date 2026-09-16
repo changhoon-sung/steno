@@ -13,6 +13,11 @@ public final class DefaultSpeechRecognizerFactory: SpeechRecognizerFactory, Send
         async throws -> SpeechRecognizerHandle {
         DefaultSpeechRecognizerHandle(locale: locale, inputFormat: format, source: source, fastResults: fastResults)
     }
+
+    public func makeRecognizer(locale: Locale, format: AVAudioFormat, source: AudioSourceType, fastResults: Bool)
+        async throws -> SpeechRecognizerHandle {
+        DefaultSpeechRecognizerHandle(locale: locale, inputFormat: format, source: source, fastResults: fastResults)
+    }
 }
 
 /// Real speech recognizer handle wrapping SpeechAnalyzer.

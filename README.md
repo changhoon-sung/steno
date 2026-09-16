@@ -21,7 +21,7 @@ This fork defaults to TUI-owned daemon lifetime. Build it from source:
 ```bash
 git clone https://github.com/changhoon-sung/steno.git
 cd steno
-git checkout feat/macos27-transcription
+git checkout fix/meter-smoothing
 make install
 ```
 
@@ -73,15 +73,18 @@ Running `steno` starts a daemon owned by that TUI. Quitting with `q`, closing th
 | `j`/`k` | Scroll transcript |
 | `Up`/`Down` | Scroll transcript |
 | `l` | Select transcription language (English / 한국어) |
+| `f` | Toggle low-latency recognition; current mode is shown in the header |
 | `q` | Quit and stop the daemon owned by this TUI |
 
 ### Audio meters and low-latency mode
 
-MIC shows microphone input; SYS shows audio played by the computer. The meters use a -60 to 0 dBFS display scale so ordinary quiet speech remains visible. This changes the display, not recording gain.
+MIC shows microphone input; SYS shows audio played by the computer. The meters use a -48 to 0 dBFS display range, rounded cells, a short peak hold, a gradual fall, and threshold hysteresis. Background hiss stays low and empty capture windows no longer flash the bars off. This changes the display, not recording gain.
 
 On macOS 27, audio is converted with `AnalyzerInputConverter`, including its final buffered tail. The microphone uses the new read-only audio tap and transfers an owned copy to the asynchronous pipeline.
 
-The optional `lowLatencyTranscription` setting in `settings.json` enables SpeechTranscriber's `fastResults`. It defaults to `false`: a short English/Korean streaming comparison improved partial-result latency but did not materially accelerate final results, and Korean character errors increased. Change it only while Steno is stopped; the next launch reads it.
+Press `f` to toggle low-latency recognition. The header shows `LOW LATENCY` or `ACCURATE`, and the footer shows the current switch state. The daemon briefly restarts recognition, confirms the new mode, and saves the choice for the next launch. While paused, `f` updates the saved preference without resuming recording or resetting the pause timer.
+
+Low-latency mode enables SpeechTranscriber's `fastResults` (`lowLatencyTranscription` in `settings.json`). It defaults off: a short English/Korean comparison improved partial-result latency but did not materially accelerate final results, and Korean character errors increased.
 
 ### Transcription language
 

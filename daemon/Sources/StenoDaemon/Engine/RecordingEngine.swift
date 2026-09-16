@@ -26,6 +26,7 @@ public actor RecordingEngine {
     public private(set) var currentDevice: String?
     public private(set) var isSystemAudioEnabled: Bool = false
     public private(set) var segmentCount: Int = 0
+    public private(set) var lowLatencyTranscription: Bool
 
     // MARK: - Dependencies
 
@@ -389,8 +390,10 @@ public actor RecordingEngine {
         micDiarizer: (any DiarizationService)? = nil,
         sysDiarizer: (any DiarizationService)? = nil,
         deviceEnumerator: any AudioInputDeviceEnumerating = CoreAudioInputDeviceEnumerator(),
-        micSilenceWarnAfter: Duration = .seconds(30)
+        micSilenceWarnAfter: Duration = .seconds(30),
+        lowLatencyTranscription: Bool = false
     ) {
+        self.lowLatencyTranscription = lowLatencyTranscription
         self.repository = repository
         self.permissionService = permissionService
         self.summaryCoordinator = summaryCoordinator
@@ -420,6 +423,23 @@ public actor RecordingEngine {
         self.micSilenceWatchdog = MicSilenceWatchdog(
             ticksToWarn: Int((warnSeconds / MicSilenceWatchdog.defaultTickSeconds).rounded())
         )
+    }
+
+    /// Applied between pipeline instances; changing this never resumes a pause.
+    public func configureLowLatency(_ enabled: Bool) throws {
+        guard status == .idle || status == .error || status == .unsupported || status == .paused else {
+            throw RecordingEngineError.alreadyRecording
+        }
+        let previous = lowLatencyTranscription
+        lowLatencyTranscription = enabled
+        if status == .paused {
+            // Persist only this preference. Do not touch capture, the pause
+            // anchor, or its auto-resume deadline.
+            var settings = StenoSettings.load()
+            settings.lowLatencyTranscription = enabled
+            do { try settings.save() }
+            catch { lowLatencyTranscription = previous; throw error }
+        }
     }
 
     // MARK: - Public Commands
@@ -502,6 +522,7 @@ public actor RecordingEngine {
     private func persistLastKnownAudioConfig(device: String?, systemAudio: Bool) async {
         var settings = StenoSettings.load()
         settings.lastLocale = currentLocale.identifier(.bcp47)
+        settings.lowLatencyTranscription = lowLatencyTranscription
         settings.lastDevice = device
         settings.lastSystemAudioEnabled = systemAudio
         do {
@@ -580,7 +601,7 @@ public actor RecordingEngine {
             // ring buffers; the tick task is created on the first bring-up.
             startDiarizationScheduler()
 
-            let recognizer = try await speechRecognizerFactory.makeRecognizer(locale: locale, format: format, source: .microphone)
+            let recognizer = try await speechRecognizerFactory.makeRecognizer(locale: locale, format: format, source: .microphone, fastResults: lowLatencyTranscription)
             micRecognizerHandle = recognizer
 
             // #85: anchor this analyzer's input timeline to wall clock
@@ -1504,7 +1525,8 @@ public actor RecordingEngine {
             let recognizer = try await speechRecognizerFactory.makeRecognizer(
                 locale: currentLocale,
                 format: format,
-                source: .microphone
+                source: .microphone,
+                fastResults: lowLatencyTranscription
             )
             micRecognizerHandle = recognizer
 
@@ -1632,7 +1654,8 @@ public actor RecordingEngine {
             let recognizer = try await speechRecognizerFactory.makeRecognizer(
                 locale: currentLocale,
                 format: format,
-                source: .systemAudio
+                source: .systemAudio,
+                fastResults: lowLatencyTranscription
             )
             sysRecognizerHandle = recognizer
 
@@ -1746,7 +1769,7 @@ public actor RecordingEngine {
 
             let sysBuffers = tappedStream(buffers, isMic: false)
 
-            let recognizer = try await speechRecognizerFactory.makeRecognizer(locale: locale, format: format, source: .systemAudio)
+            let recognizer = try await speechRecognizerFactory.makeRecognizer(locale: locale, format: format, source: .systemAudio, fastResults: lowLatencyTranscription)
             sysRecognizerHandle = recognizer
 
             // #85: anchor this analyzer's input timeline to wall clock

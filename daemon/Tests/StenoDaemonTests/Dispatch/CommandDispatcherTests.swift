@@ -385,4 +385,71 @@ struct CommandDispatcherTests {
         await engine.stop()
     }
 
+    @Test @MainActor func fastModeSwitchesBothWaysAndReachesRecognizer() async throws {
+        let repo = MockTranscriptRepository()
+        let factory = MockSpeechRecognizerFactory()
+        let engine = RecordingEngine(repository: repo, permissionService: MockPermissionService(),
+            audioSourceFactory: MockAudioSourceFactory(), speechRecognizerFactory: factory)
+        let dispatcher = CommandDispatcher(engine: engine, broadcaster: EventBroadcaster())
+        let client = MockClientConnection()
+        _ = try await engine.start(locale: Locale(identifier: "ko-KR"))
+        for enabled in [true, false] {
+            await client.reset()
+            await dispatcher.handle(DaemonCommand(cmd: "reconfigure", systemAudio: false, lowLatencyTranscription: enabled), from: client)
+            let response = try #require(await client.sentResponses.first)
+            #expect(response.ok)
+            #expect(response.lowLatencyTranscription == enabled)
+            #expect(response.locale == "ko-KR")
+            #expect(factory.lastFastResults == enabled)
+            #expect(await engine.lowLatencyTranscription == enabled)
+        }
+        await engine.stop()
+    }
+
+    @Test @MainActor func pausedFastModeOnlyChangesPreference() async throws {
+        let (dispatcher, engine, _) = makeDispatcher()
+        let client = MockClientConnection()
+        _ = try await engine.start()
+        await dispatcher.handle(DaemonCommand(cmd: "pause", indefinite: true), from: client)
+        await client.reset()
+        await dispatcher.handle(DaemonCommand(cmd: "reconfigure", systemAudio: false, lowLatencyTranscription: true), from: client)
+        #expect(await client.sentResponses.first?.ok == true)
+        #expect(await engine.status == .paused)
+        #expect(await engine.lowLatencyTranscription == true)
+        #expect(await client.sentResponses.first?.pausedIndefinitely == true)
+        #expect(await client.sentResponses.first?.recording == false)
+        await engine.stop()
+    }
+
+    @Test @MainActor func failedFastModeSwitchRestoresPreviousMode() async throws {
+        struct Failure: Error {}
+        let repo = MockTranscriptRepository()
+        let factory = MockSpeechRecognizerFactory()
+        let engine = RecordingEngine(repository: repo, permissionService: MockPermissionService(),
+            audioSourceFactory: MockAudioSourceFactory(), speechRecognizerFactory: factory)
+        let dispatcher = CommandDispatcher(engine: engine, broadcaster: EventBroadcaster())
+        _ = try await engine.start()
+        factory.factoryError = Failure()
+        let client = MockClientConnection()
+        await dispatcher.handle(DaemonCommand(cmd: "reconfigure", systemAudio: false, lowLatencyTranscription: true), from: client)
+        #expect(await client.sentResponses.first?.ok == false)
+        #expect(await engine.lowLatencyTranscription == false)
+        await engine.stop()
+    }
+
+    @Test @MainActor func startupRestoresFastModeToRecognizerAndStatus() async throws {
+        let repo = MockTranscriptRepository()
+        let factory = MockSpeechRecognizerFactory()
+        let engine = RecordingEngine(repository: repo, permissionService: MockPermissionService(),
+            audioSourceFactory: MockAudioSourceFactory(), speechRecognizerFactory: factory,
+            lowLatencyTranscription: true)
+        let dispatcher = CommandDispatcher(engine: engine, broadcaster: EventBroadcaster())
+        _ = try await engine.start()
+        #expect(factory.lastFastResults)
+        let client = MockClientConnection()
+        await dispatcher.handle(DaemonCommand(cmd: "status"), from: client)
+        #expect(await client.sentResponses.first?.lowLatencyTranscription == true)
+        await engine.stop()
+    }
+
 }
