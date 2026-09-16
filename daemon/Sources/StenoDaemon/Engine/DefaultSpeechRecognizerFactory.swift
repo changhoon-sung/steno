@@ -5,11 +5,13 @@ import Speech
 
 /// Real speech recognizer factory using macOS 26 SpeechAnalyzer API.
 public final class DefaultSpeechRecognizerFactory: SpeechRecognizerFactory, Sendable {
-    public init() {}
+    private let fastResults: Bool
+
+    public init(fastResults: Bool = false) { self.fastResults = fastResults }
 
     public func makeRecognizer(locale: Locale, format: AVAudioFormat, source: AudioSourceType)
         async throws -> SpeechRecognizerHandle {
-        DefaultSpeechRecognizerHandle(locale: locale, inputFormat: format, source: source)
+        DefaultSpeechRecognizerHandle(locale: locale, inputFormat: format, source: source, fastResults: fastResults)
     }
 }
 
@@ -22,13 +24,15 @@ final class DefaultSpeechRecognizerHandle: SpeechRecognizerHandle, @unchecked Se
     private let locale: Locale
     private let inputFormat: AVAudioFormat
     private let source: AudioSourceType
+    private let fastResults: Bool
     private var analyzer: SpeechAnalyzer?
     private var transcriber: SpeechTranscriber?
 
-    init(locale: Locale, inputFormat: AVAudioFormat, source: AudioSourceType) {
+    init(locale: Locale, inputFormat: AVAudioFormat, source: AudioSourceType, fastResults: Bool = false) {
         self.locale = locale
         self.inputFormat = inputFormat
         self.source = source
+        self.fastResults = fastResults
     }
 
     func transcribe(buffers: AsyncStream<AVAudioPCMBuffer>)
@@ -36,7 +40,7 @@ final class DefaultSpeechRecognizerHandle: SpeechRecognizerHandle, @unchecked Se
         let transcriber = SpeechTranscriber(
             locale: self.locale,
             transcriptionOptions: [],
-            reportingOptions: [.volatileResults],
+            reportingOptions: fastResults ? [.volatileResults, .fastResults] : [.volatileResults],
             attributeOptions: []
         )
         self.transcriber = transcriber
@@ -89,44 +93,18 @@ private struct Pipeline: @unchecked Sendable {
     let inputBuilder: AsyncStream<AnalyzerInput>.Continuation
 
     func run(continuation: AsyncThrowingStream<RecognizerResult, Error>.Continuation) async {
-        // Get the format SpeechAnalyzer expects and create a converter if needed.
         let analyzerFormat = await SpeechAnalyzer.bestAvailableAudioFormat(
             compatibleWith: [transcriber]
-        )
-        let converter: AVAudioConverter? = if let analyzerFormat, inputFormat != analyzerFormat {
-            AVAudioConverter(from: inputFormat, to: analyzerFormat)
-        } else {
-            nil
-        }
+        ) ?? inputFormat
 
         do {
             try await withThrowingTaskGroup(of: Void.self) { group in
-                // Task 1: Feed audio buffers, converting format if needed.
+                // Task 1: Feed all converted audio and flush its pending tail.
                 group.addTask {
-                    for await buffer in self.buffers {
-                        if let converter, let targetFormat = analyzerFormat {
-                            let ratio = targetFormat.sampleRate / self.inputFormat.sampleRate
-                            let frameCount = AVAudioFrameCount(
-                                Double(buffer.frameLength) * ratio
-                            )
-                            guard let converted = AVAudioPCMBuffer(
-                                pcmFormat: targetFormat,
-                                frameCapacity: frameCount
-                            ) else { continue }
-
-                            var error: NSError?
-                            converter.convert(to: converted, error: &error) { _, status in
-                                status.pointee = .haveData
-                                return buffer
-                            }
-                            if error == nil {
-                                self.inputBuilder.yield(AnalyzerInput(buffer: converted))
-                            }
-                        } else {
-                            self.inputBuilder.yield(AnalyzerInput(buffer: buffer))
-                        }
-                    }
-                    self.inputBuilder.finish()
+                    try await AnalyzerAudioFeeder.feed(
+                        self.buffers, inputFormat: self.inputFormat,
+                        analyzerFormat: analyzerFormat, into: self.inputBuilder
+                    )
                 }
 
                 // Task 2: Listen for transcription results.

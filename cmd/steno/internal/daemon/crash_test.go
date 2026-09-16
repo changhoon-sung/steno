@@ -11,6 +11,10 @@ import (
 // even without an event subscriber. This isolates whether the crash is related
 // to event broadcasting or to SpeechAnalyzer itself.
 func TestDaemonCrashDuringRecording(t *testing.T) {
+	// Explicit opt-in: these tests can stop/restart the running daemon.
+	if os.Getenv("STENO_LIVE_TESTS") != "1" {
+		t.Skip("set STENO_LIVE_TESTS=1 only with a disposable daemon")
+	}
 	sockPath := SocketPath()
 	if _, err := os.Stat(sockPath); os.IsNotExist(err) {
 		t.Skip("daemon not running")

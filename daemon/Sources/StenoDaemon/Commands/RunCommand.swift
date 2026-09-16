@@ -71,23 +71,12 @@ struct RunCommand: ParsableCommand {
 
                 // 4. Initialize services
                 let permissionService = SystemPermissionService()
-                let summarizer: SummarizationService = FoundationModelSummarizationService()
 
-                // Load settings once and reuse for every wiring step. A
-                // prior version read the file twice (once for the summary
-                // coordinator, once for the engine), opening a small window
-                // where a settings-file write between reads would leave the
-                // two consumers disagreeing. See PR #36 review (Copilot).
+                // Transcription only: do not load or invoke a summarization model.
                 let settings = StenoSettings.load()
 
-                let summaryCoordinator = RollingSummaryCoordinator(
-                    repository: repository,
-                    summarizer: summarizer,
-                    minSegmentsForExtraction: settings.topicExtractionMinSegments
-                )
-
                 let audioSourceFactory = DefaultAudioSourceFactory()
-                let speechRecognizerFactory = DefaultSpeechRecognizerFactory()
+                let speechRecognizerFactory = DefaultSpeechRecognizerFactory(fastResults: settings.lowLatencyTranscription)
 
                 // 5. Create engine, broadcaster, dispatcher
                 let broadcaster = EventBroadcaster()
@@ -104,7 +93,6 @@ struct RunCommand: ParsableCommand {
                 let engine = RecordingEngine(
                     repository: repository,
                     permissionService: permissionService,
-                    summaryCoordinator: summaryCoordinator,
                     audioSourceFactory: audioSourceFactory,
                     speechRecognizerFactory: speechRecognizerFactory,
                     delegate: broadcaster,

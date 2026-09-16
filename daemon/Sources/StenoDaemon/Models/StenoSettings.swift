@@ -37,6 +37,9 @@ public struct StenoSettings: Codable, Sendable {
     /// Last successfully selected transcription language (BCP-47).
     public var lastLocale: String?
 
+    /// Optional speed/accuracy tradeoff. Keep full-context recognition by default.
+    public var lowLatencyTranscription: Bool
+
     public var transcriptionLocale: Locale {
         lastLocale.map { Locale(identifier: $0) } ?? .current
     }
@@ -135,6 +138,7 @@ public struct StenoSettings: Codable, Sendable {
         anthropicAPIKey: String? = nil,
         anthropicModel: String = "claude-3-5-haiku-20241022",
         lastLocale: String? = nil,
+        lowLatencyTranscription: Bool = false,
         lastDevice: String? = nil,
         lastSystemAudioEnabled: Bool = true,
         healGapSeconds: Int = 30,
@@ -152,6 +156,7 @@ public struct StenoSettings: Codable, Sendable {
         self.anthropicAPIKey = anthropicAPIKey
         self.anthropicModel = anthropicModel
         self.lastLocale = lastLocale
+        self.lowLatencyTranscription = lowLatencyTranscription
         self.lastDevice = lastDevice
         self.lastSystemAudioEnabled = lastSystemAudioEnabled
         self.healGapSeconds = healGapSeconds
@@ -176,6 +181,7 @@ public struct StenoSettings: Codable, Sendable {
         case anthropicAPIKey
         case anthropicModel
         case lastLocale
+        case lowLatencyTranscription
         case lastDevice
         case lastSystemAudioEnabled
         case healGapSeconds
@@ -196,6 +202,7 @@ public struct StenoSettings: Codable, Sendable {
         self.anthropicAPIKey = try container.decodeIfPresent(String.self, forKey: .anthropicAPIKey)
         self.anthropicModel = try container.decodeIfPresent(String.self, forKey: .anthropicModel) ?? "claude-3-5-haiku-20241022"
         self.lastLocale = try container.decodeIfPresent(String.self, forKey: .lastLocale)
+        self.lowLatencyTranscription = try container.decodeIfPresent(Bool.self, forKey: .lowLatencyTranscription) ?? false
         self.lastDevice = try container.decodeIfPresent(String.self, forKey: .lastDevice)
         self.lastSystemAudioEnabled = try container.decodeIfPresent(Bool.self, forKey: .lastSystemAudioEnabled) ?? true
         self.healGapSeconds = try container.decodeIfPresent(Int.self, forKey: .healGapSeconds) ?? 30

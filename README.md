@@ -4,7 +4,7 @@ A fast, private speech-to-text TUI for macOS.
 
 Steno uses Apple's SpeechAnalyzer API (macOS 26) for real-time transcription that runs entirely on-device. No cloud services, no API keys, no rate limits.
 
-![Steno transcribing a Seahawks press conference with 15 auto-extracted topics](assets/screenshot.png)
+This fork provides a transcription-only TUI. Local summaries, meeting notes, and topic generation are disabled; previously saved data remains readable through MCP.
 
 ## Requirements
 
@@ -21,7 +21,7 @@ This fork defaults to TUI-owned daemon lifetime. Build it from source:
 ```bash
 git clone https://github.com/changhoon-sung/steno.git
 cd steno
-git checkout feat/tui-language-picker
+git checkout feat/macos27-transcription
 make install
 ```
 
@@ -43,7 +43,7 @@ mv steno steno-daemon ~/.local/bin/
 
 ### From source
 
-Requires Swift 6.2+ and Go 1.24+.
+Requires Xcode 27 (Swift 6.4 / macOS 27 SDK) and Go 1.24+. macOS 26 retains the compatible audio-conversion path.
 
 ```bash
 git clone https://github.com/jwulff/steno.git
@@ -70,12 +70,18 @@ Running `steno` starts a daemon owned by that TUI. Quitting with `q`, closing th
 | `p` / `P` | Pause for 30 minutes / indefinitely; press again to resume |
 | `i` | Cycle input devices |
 | `a` | Toggle system audio capture |
-| `Tab` | Switch panel focus (topics/transcript) |
-| `j`/`k` | Navigate topics |
-| `Enter` | Expand/collapse topic |
+| `j`/`k` | Scroll transcript |
 | `Up`/`Down` | Scroll transcript |
 | `l` | Select transcription language (English / 한국어) |
 | `q` | Quit and stop the daemon owned by this TUI |
+
+### Audio meters and low-latency mode
+
+MIC shows microphone input; SYS shows audio played by the computer. The meters use a -60 to 0 dBFS display scale so ordinary quiet speech remains visible. This changes the display, not recording gain.
+
+On macOS 27, audio is converted with `AnalyzerInputConverter`, including its final buffered tail. The microphone uses the new read-only audio tap and transfers an owned copy to the asynchronous pipeline.
+
+The optional `lowLatencyTranscription` setting in `settings.json` enables SpeechTranscriber's `fastResults`. It defaults to `false`: a short English/Korean streaming comparison improved partial-result latency but did not materially accelerate final results, and Korean character errors increased. Change it only while Steno is stopped; the next launch reads it.
 
 ### Transcription language
 
@@ -135,13 +141,13 @@ Steno is a two-process system: a Swift daemon handles audio capture and speech r
 │  - TUI display  │                               │  - Microphone capture│
 │  - MCP server   │      SQLite (read-only)       │  - System audio      │
 │  - Daemon mgmt  │◄─────────────────────────────►│  - SpeechAnalyzer    │
-│  - Level meters │                               │  - Topic extraction  │
+│  - Level meters │                               │  - Segment storage   │
 └─────────────────┘                               │  - Segment storage   │
                                                   └──────────────────────┘
 ```
 
-- **`steno`** (Go) — TUI + MCP server + daemon lifecycle management. Connects to the daemon via Unix socket, reads topics from SQLite.
-- **`steno-daemon`** (Swift) — Captures mic + system audio via ScreenCaptureKit, runs SpeechAnalyzer/SpeechTranscriber, persists segments to SQLite (GRDB), extracts topics via on-device LLMs.
+- **`steno`** (Go) — TUI + MCP server + daemon lifecycle management. Connects to the daemon via Unix socket and provides saved-transcript MCP queries.
+- **`steno-daemon`** (Swift) — Captures mic + system audio via ScreenCaptureKit, runs SpeechAnalyzer/SpeechTranscriber, persists segments to SQLite (GRDB). The production daemon does not instantiate a summary coordinator or local LLM.
 
 ## Project Structure
 
@@ -192,3 +198,7 @@ See [CLAUDE.md](CLAUDE.md) for development conventions.
 ## License
 
 MIT
+
+### Test isolation
+
+Normal Go tests skip the live-daemon tests. `STENO_LIVE_TESTS=1` explicitly enables tests that can stop and restart the default daemon; use it only with a disposable recording session. Set `STENO_SETTINGS_PATH` to a temporary file when running Swift tests to keep personal settings separate.

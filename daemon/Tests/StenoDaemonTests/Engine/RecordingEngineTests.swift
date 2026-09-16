@@ -539,4 +539,32 @@ struct AudioBacklogSheddingTests {
         let decoded = try JSONDecoder().decode(StenoSettings.self, from: Data(json.utf8))
         #expect(decoded.audioBacklogCapSeconds == 0, "shedding must be opt-in")
     }
+    @Test @MainActor func transcriptionWithoutSummaryCoordinatorPersistsAllResults() async throws {
+        let repo = MockTranscriptRepository()
+        let recognizer = MockSpeechRecognizerFactory()
+        let delegate = MockRecordingEngineDelegate()
+        recognizer.handle.resultsToYield = (1...12).map {
+            RecognizerResult(text: "Lecture sentence \($0)", isFinal: true)
+        }
+        let engine = RecordingEngine(
+            repository: repo,
+            permissionService: MockPermissionService(),
+            audioSourceFactory: MockAudioSourceFactory(),
+            speechRecognizerFactory: recognizer,
+            delegate: delegate,
+            emptySessionMinChars: 0,
+            emptySessionMinDurationSeconds: 0
+        )
+        let session = try await engine.start()
+        let deadline = ContinuousClock.now + .seconds(1)
+        while await engine.segmentCount < 12, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(try await repo.segments(for: session.id).count == 12)
+        #expect(try await repo.latestSummary(for: session.id) == nil)
+        let events = await delegate.events
+        #expect(!events.contains { if case .modelProcessing = $0 { return true }; return false })
+        await engine.stop()
+    }
+
 }

@@ -122,9 +122,25 @@ public final class MicrophoneAudioSource: @unchecked Sendable {
 
         let (stream, continuation) = AsyncStream<AVAudioPCMBuffer>.makeStream()
 
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, _ in
-            nonisolated(unsafe) let unsafeBuffer = buffer
-            continuation.yield(unsafeBuffer)
+        if #available(macOS 27, *) {
+            try inputNode.installAudioTap(onBus: 0, bufferSize: 4096, format: format) { buffer, _ in
+                // The Speech converter may retain an input beyond this callback.
+                // Give the asynchronous pipeline its own mutable copy.
+                continuation.yield(AVAudioPCMBuffer(copying: buffer))
+            }
+        } else {
+            inputNode.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, _ in
+                guard let owned = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) else { return }
+                owned.frameLength = buffer.frameLength
+                let source = UnsafeMutableAudioBufferListPointer(buffer.mutableAudioBufferList)
+                let destination = UnsafeMutableAudioBufferListPointer(owned.mutableAudioBufferList)
+                for index in 0..<min(source.count, destination.count) {
+                    if let src = source[index].mData, let dst = destination[index].mData {
+                        memcpy(dst, src, min(Int(source[index].mDataByteSize), Int(destination[index].mDataByteSize)))
+                    }
+                }
+                continuation.yield(owned)
+            }
         }
 
         engine.prepare()

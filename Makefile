@@ -100,37 +100,8 @@ check-release-tag:
 	echo "Tag $(TAG) matches VERSION ($$expected)"
 
 test-daemon:
-	# Swift testing's process-teardown allocator races libdispatch's
-	# source teardown on macOS 26 (Xcode 6.3.1), surfacing as
-	# "freed pointer was not the last allocation" → SIGABRT during
-	# the harness's final aggregation. Every individual test still
-	# emits a "✔ Test ... passed" line before the abort. Treat the
-	# run as successful iff at least one ✔ line is present and zero
-	# ✘ failures; ignore the late abort signal.
-	#
-	# Use `mktemp` so concurrent runs don't clobber each other and so
-	# we don't rely on a fixed /tmp path that's vulnerable to
-	# symlink attacks on shared machines. `trap` cleans up on exit.
-	#
-	# BSD mktemp (macOS) only substitutes a *trailing* run of X's —
-	# Xs in the middle of the template are taken literally. A template
-	# ending in `.log` therefore produces the same filename every run
-	# and the second invocation fails with "File exists". Create a
-	# unique directory instead and put the log inside it.
-	@cd $(DAEMON_DIR) && \
-		log_dir=$$(mktemp -d "$${TMPDIR:-/tmp}/steno-daemon-test.XXXXXX") || { echo "mktemp -d failed (check TMPDIR=$${TMPDIR:-/tmp})" >&2; exit 1; }; \
-		log_file="$$log_dir/test.log"; \
-		trap 'rm -rf "$$log_dir"' EXIT; \
-		( swift test 2>&1; echo "swift_exit=$$?" ) | tee "$$log_file" >/dev/null; \
-		passed=$$(grep -cE "^✔ Test " "$$log_file" || true); \
-		failed=$$(grep -cE "^✘" "$$log_file" || true); \
-		echo "Daemon tests: $$passed passed, $$failed failed"; \
-		if [ "$$passed" -gt 0 ] && [ "$$failed" -eq 0 ]; then \
-			exit 0; \
-		else \
-			tail -50 "$$log_file"; \
-			exit 1; \
-		fi
+	# Xcode 27 emits different test symbols; rely on the actual exit status.
+	cd $(DAEMON_DIR) && swift test
 
 test-steno:
 	# `-p 1` serializes packages. `internal/app` and `internal/daemon` both

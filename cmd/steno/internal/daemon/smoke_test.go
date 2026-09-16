@@ -9,6 +9,10 @@ import (
 // TestLiveDaemonConnection connects to a running daemon and tests basic commands.
 // Skipped if the daemon socket doesn't exist.
 func TestLiveDaemonConnection(t *testing.T) {
+	// Explicit opt-in: these tests can stop/restart the running daemon.
+	if os.Getenv("STENO_LIVE_TESTS") != "1" {
+		t.Skip("set STENO_LIVE_TESTS=1 only with a disposable daemon")
+	}
 	sockPath := SocketPath()
 	if _, err := os.Stat(sockPath); os.IsNotExist(err) {
 		t.Skip("daemon not running (no socket at", sockPath, ")")

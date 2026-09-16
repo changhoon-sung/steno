@@ -14,6 +14,10 @@ import (
 // TestLiveTUIFlow exercises the full TUI model lifecycle against a running daemon.
 // Skipped if the daemon isn't running.
 func TestLiveTUIFlow(t *testing.T) {
+	// Explicit opt-in: these tests can stop/restart the running daemon.
+	if os.Getenv("STENO_LIVE_TESTS") != "1" {
+		t.Skip("set STENO_LIVE_TESTS=1 only with a disposable daemon")
+	}
 	sockPath := daemon.SocketPath()
 	if _, err := os.Stat(sockPath); os.IsNotExist(err) {
 		t.Skip("daemon not running")
